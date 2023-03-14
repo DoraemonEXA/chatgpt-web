@@ -50,6 +50,23 @@ function handleSubmit() {
   onConversation()
 }
 
+function extractFullDelta(responseText: string): { data: any; text: string; delta: string } {
+  let delta = ''
+  let text = ''
+  let data
+  const chunks = responseText.split('\n')
+  for (const chunk of chunks) {
+    if (chunk && chunk.length > 0) {
+      data = JSON.parse(chunk)
+      if (data.text && data.text.length > 0)
+        text = data.text
+      else if (data.delta)
+        delta += data.delta
+    }
+  }
+  return { data, delta, text }
+}
+
 async function onConversation() {
   let message = prompt.value
 
@@ -99,6 +116,8 @@ async function onConversation() {
 
   try {
     let lastText = ''
+    let lastHandleIndex = 0
+    let fullText = ''
     const fetchChatAPIOnce = async () => {
       await fetchChatAPIProcess<Chat.ConversationResponse>({
         prompt: message,
@@ -107,19 +126,23 @@ async function onConversation() {
         onDownloadProgress: ({ event }) => {
           const xhr = event.target
           const { responseText } = xhr
-          // Always process the final line
-          const lastIndex = responseText.lastIndexOf('\n')
-          let chunk = responseText
-          if (lastIndex !== -1)
-            chunk = responseText.substring(lastIndex)
+          // Always process the new lines
+          const partialResponseText: string = responseText.substring(lastHandleIndex)
+          lastHandleIndex += partialResponseText.length
           try {
-            const data = JSON.parse(chunk)
+            const result = extractFullDelta(partialResponseText)
+            const data = result.data
+            if (result.text.length > 0)
+              fullText = result.text
+            else if (result.delta.length > 0)
+              fullText += result.delta
+
             updateChat(
               +uuid,
               dataSources.value.length - 1,
               {
                 dateTime: new Date().toLocaleString(),
-                text: lastText + data.text ?? '',
+                text: lastText + fullText,
                 inversion: false,
                 error: false,
                 loading: false,
@@ -128,7 +151,7 @@ async function onConversation() {
               },
             )
 
-            if (openLongReply && data.detail.choices[0].finish_reason === 'length') {
+            if (openLongReply && data.detail && data.detail.choices[0].finish_reason === 'length') {
               options.parentMessageId = data.id
               lastText = data.text
               message = ''
@@ -229,6 +252,8 @@ async function onRegenerate(index: number) {
 
   try {
     let lastText = ''
+    let lastHandleIndex = 0
+    let fullText = ''
     const fetchChatAPIOnce = async () => {
       await fetchChatAPIProcess<Chat.ConversationResponse>({
         prompt: message,
@@ -237,19 +262,22 @@ async function onRegenerate(index: number) {
         onDownloadProgress: ({ event }) => {
           const xhr = event.target
           const { responseText } = xhr
-          // Always process the final line
-          const lastIndex = responseText.lastIndexOf('\n')
-          let chunk = responseText
-          if (lastIndex !== -1)
-            chunk = responseText.substring(lastIndex)
+          // Always process the new lines
+          const partialResponseText: string = responseText.substring(lastHandleIndex)
+          lastHandleIndex += partialResponseText.length
           try {
-            const data = JSON.parse(chunk)
+            const result = extractFullDelta(partialResponseText)
+            const data = result.data
+            if (result.text.length > 0)
+              fullText = result.text
+            else if (result.delta.length > 0)
+              fullText += result.delta
             updateChat(
               +uuid,
               index,
               {
                 dateTime: new Date().toLocaleString(),
-                text: lastText + data.text ?? '',
+                text: lastText + fullText,
                 inversion: false,
                 error: false,
                 loading: false,
@@ -258,7 +286,7 @@ async function onRegenerate(index: number) {
               },
             )
 
-            if (openLongReply && data.detail.choices[0].finish_reason === 'length') {
+            if (openLongReply && data.detail && data.detail.choices[0].finish_reason === 'length') {
               options.parentMessageId = data.id
               lastText = data.text
               message = ''
